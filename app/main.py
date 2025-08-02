@@ -1,5 +1,5 @@
+import json
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
-
 from app.services.generator_service import (
     generate_cover_letter,
     generate_resume_summary,
@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from app.core.resume_parser import (
     parse_pdf_to_text,
     preprocess_text,
+    parse_text_to_json,
 )
 
 app = FastAPI(
@@ -19,8 +20,7 @@ app = FastAPI(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Initialize knowledge base on startup
+async def lifespan():
     initialize_knowledge_base()
     yield
 
@@ -39,38 +39,31 @@ def read_root():
 @app.post("/analyze-resume/", tags=["Resume Analysis"])
 async def process_resume_pdf(file: UploadFile = File(...)):
     """
-    Receives a resume in PDF format, parses and preprocesses it,
-    then analyzes it using the RAG pipeline.
+    Receives a resume in PDF format, parses it into a structured JSON,
+    and then analyzes it using the RAG pipeline.
     """
-    # 1. Validate the file type
+    # Validate the file type
     if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=400, detail="Invalid file type. Please upload a PDF."
         )
 
     try:
-        # 2. Read the file content as bytes
+        # Step 1 & 2: Parse PDF and Preprocess text (same as before)
         pdf_bytes = await file.read()
-        if not pdf_bytes:
-            raise HTTPException(status_code=400, detail="PDF file is empty.")
-
-        # 3. Parse and Preprocess the text
         raw_text = parse_pdf_to_text(pdf_bytes)
         processed_text = preprocess_text(raw_text)
 
-        if not processed_text:
-            raise HTTPException(
-                status_code=500, detail="Could not extract text from the PDF."
-            )
+        # Step 3: NEW - Parse text to structured JSON
+        structured_resume = parse_text_to_json(processed_text)
 
-        # 4. Analyze the cleaned text with the existing RAG pipeline
-        insights = analyze_resume(processed_text)
+        # Step 4: Analyze using the structured data
+        # We convert the dict to a formatted string to pass to the pipeline
+        insights = analyze_resume(json.dumps(structured_resume, indent=2))
 
-        print(insights)
-        # We can also return the extracted text for debugging purposes if needed
         return {
             "insights": insights,
-            # "extracted_text": processed_text
+            "structured_resume": structured_resume,  # Also return the structured data for frontend use
         }
 
     except HTTPException as he:
@@ -102,17 +95,18 @@ async def process_resume_and_job(
         pdf_bytes = await file.read()
         raw_text = parse_pdf_to_text(pdf_bytes)
         processed_text = preprocess_text(raw_text)
+        structured_resume = parse_text_to_json(processed_text)
 
         if not processed_text:
             raise HTTPException(
                 status_code=500, detail="Could not extract text from the PDF."
             )
 
-        # Call the NEW analysis function
-        insights = analyze_resume_for_job(processed_text, job_description)
+        insights = analyze_resume_for_job(
+            json.dumps(structured_resume, indent=2), job_description
+        )
 
-        print(insights)
-        return {"analysis": insights}
+        return {"analysis": insights, "structured_resume": structured_resume}
 
     except Exception as e:
         raise HTTPException(
