@@ -1,7 +1,6 @@
 from app.agents import profiler
-from app.agents.perplexica_researcher import run_perplexica_research
 from app.agents import chief_analyst
-
+from app.agents.perplexica_researcher import direct_search
 from app.services.gemini_service import get_gemini_response
 
 
@@ -34,7 +33,7 @@ def run_analysis_pipeline(resume_json_string: str) -> str:
     # --- This is the only change in the orchestrator ---
     # Call the new high-level research function
     print("Orchestrator: Dispatching to enhanced Perplexica Researcher Agent...")
-    market_brief = run_perplexica_research(search_queries)
+    market_brief = direct_search(search_queries)
     # ---
 
     print("--- Perplexica Market Intelligence Brief ---")
